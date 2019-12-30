@@ -8,7 +8,7 @@ $(document).ready( function() {
     }); 
 
     browser.storage.local.get( [ "proxy_addr" ], function( result) {
-        $("#proxyaddr").text( result.proxy_addr );    
+        $("#proxyaddr").text( `${result.proxy_addr.host}:${result.proxy_addr.port}` );
     } );
 
     $(".inquerito").click( function() {

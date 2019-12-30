@@ -9,7 +9,7 @@ var Ahoy = function() {
 	 * DEFAULTS
 	 */
 	this.sites_list = ["thepiratebay.org"];
-	this.proxy_addr = "proxy1.ahoy.pro:3127"; //default proxy
+	this.proxy_addr = { host: "proxy1.ahoy.pro", port: "3127" }; //default proxy
 	this.webreq_filter_list = [];
 	this.webnav_filter_list = [];
 
@@ -23,43 +23,11 @@ var Ahoy = function() {
 		if (result.proxy_addr !== undefined)
 			this.proxy_addr = result.proxy_addr;
 
-		this.enable_proxy();
-
-		// Init
 		this.init_events();
 
 	}.bind(this));
 
 	browser.runtime.onInstalled.addListener( this.after_update.bind(this) );
-};
-
-Ahoy.prototype.enable_proxy = function () {
-	// Mudar o proxy
-	var config = {
-	    mode: "pac_script",
-	    pacScript: {
-	      url: this.api_url + "/api/pac?proxy_addr=" + this.proxy_addr,
-	      mandatory: false
-	    }
-	  };
-	  
-	// Describes the current proxy setting being used.
-	var proxySettings = {
-		"value": config,
-		"scope": "regular"
-	};
-
-	// Setup new settings for the appropriate window.
-	console.log("Applying proxy settings for " + this.proxy_addr);
-	//browser.proxy.settings.set(proxySettings);
-};
-
-/**
- * Retore PAC callback
- */
-Ahoy.prototype.disable_proxy = function( ) {
-	console.log( "Reverting proxy settings");
-	browser.proxy.settings.clear( { scope: "regular" } );
 };
 
 Ahoy.prototype.update_site_list = function () { 
@@ -96,13 +64,12 @@ Ahoy.prototype.update_proxy = function ( forceReload ) {
 			  
 	    // JSON.parse does not evaluate the attacker"s scripts.
 	    var resp = JSON.parse(xhr.responseText);
-	    var server = resp.host + ":" + resp.port;
 
 	    // Dispatch the event
 	    document.dispatchEvent( new CustomEvent( "onProxyUpdated", { 
 	    	"detail": { 
-	    		proxy_addr: server,
-	    		forceReload: forceReload
+				proxy_addr: { host: resp.host, port: resp.port },
+				forceReload: forceReload
 	    	},
 	    }));
 
@@ -180,6 +147,20 @@ Ahoy.prototype.after_update = function( details ) {
 	var last_version = parseVersionString(details.previousVersion);
 	var current_version = parseVersionString(browser.runtime.getManifest().version);
 
+	// Update stored settings
+	if (last_version && last_version.major < 3 && last_version.minor < 1) {
+		browser.storage.local.get("proxy_addr")
+			.then((settings) => {
+				const proxy = settings.proxy_addr.split(":");
+				if (proxy.length > 1) {
+					browser.storage.local.set({
+						"proxy_addr": {
+							host: proxy[0], port: proxy[1]
+						}
+					});
+				}
+			});
+	}
 
 	if( last_version.major != current_version.major 
 		|| last_version.minor != current_version.minor 
@@ -218,15 +199,11 @@ Ahoy.prototype.init_events = function() {
 };
 
 Ahoy.prototype.event_proxy_updated = function( e ) {
-	console.log("[EVENT] Proxy updated! New IP = " + e.detail.proxy_addr);
+	console.log(`[EVENT] Proxy updated! New IP = ${e.detail.proxy_addr.host}:${e.detail.proxy_addr.port}`);
 
 	// Update the fields
  	this.proxy_addr = e.detail.proxy_addr;
-	browser.storage.local.set( { "proxy_addr": e.detail.proxy_addr }, function() {
-		// Enable the proxy
-		this.enable_proxy();
-	}.bind(this) );
-  	
+	browser.storage.local.set({ "proxy_addr": e.detail.proxy_addr });
 };
 
 Ahoy.prototype.event_sites_updated = function( e ) {
@@ -241,14 +218,7 @@ Ahoy.prototype.event_sites_updated = function( e ) {
   	this.update_callbacks();
 };
 
-Ahoy.prototype.check_for_blocked_redirected_site = function( details ) {
-	this.check_for_blocked_site(details);
-}
-
 Ahoy.prototype.check_for_blocked_site = function( details ) {
-	// HOTFIX: Fix potential problem with turned off proxy
-	this.enable_proxy();
-
 	// Array with the IP's that the Blocked Page warning usually have.
 	var warning_ips = [
 		"195.23.113.202", 	// NOS
@@ -317,10 +287,10 @@ Ahoy.prototype.setup_callback_filters = function() {
 	}
 };
 
-Ahoy.prototype.is_url_in_list = function( url ) {
-	var hostname = url.replace("www.","").replace(/(http(s?))\:\/\//g,"").replace("/","");
+Ahoy.prototype.is_url_in_list = function (request) {
+	const url = new URL(request);
 
-    if (this.sites_list.indexOf(hostname) != -1) {
+	if (this.sites_list.indexOf(url.hostname) != -1) {
 		return true;
 	}
 	

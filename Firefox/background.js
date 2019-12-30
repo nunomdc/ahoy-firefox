@@ -1,21 +1,12 @@
 // Initialize the ahoy
 var ahoy = new Ahoy();
 
-// Location of the proxy script, relative to manifest.json
-const proxyScriptURL = "proxy-handler.js";
+var blockedHosts = [];
+var proxyAddress = { host: "", port: "" };
 
 /**
  * auxiliar functions
  */
-function sleep(milliseconds) {
-  var start = new Date().getTime();
-  for (var i = 0; i < 1e7; i++) {
-    if ((new Date().getTime() - start) > milliseconds) {
-      break;
-    }
-  }
-}
-
 function parseVersionString (str) {
   if (typeof(str) != "string") { return false; }
   var x = str.split(".");
@@ -40,7 +31,6 @@ function parseVersionString (str) {
 browser.alarms.create( "update_sites_and_proxy", { delayInMinutes: 30, periodInMinutes: 30 } );
 
 // Handle the alarms
-
 browser.alarms.onAlarm.addListener( function (alarm) {
 	if (alarm.name == "update_sites_and_proxy") {
 		ahoy.update_site_list();
@@ -48,60 +38,54 @@ browser.alarms.onAlarm.addListener( function (alarm) {
 	}
 });
 
-function getPopup() {
-    return browser.extension.getViews( { type: "popup" } );
-}
-
-// Default settings. If there is nothing in storage, use these values.
-const defaultSettings = {
-  sites_list: ["thepiratebay.org"],
-  proxy_addr: "proxy1.ahoy.pro:3127"
-}
-
-// Register the proxy script
-browser.proxy.register(proxyScriptURL);
-
 // Log any errors from the proxy script
-browser.proxy.onProxyError.addListener(error => {
+browser.proxy.onError.addListener(error => {
   console.error(`Proxy error: ${error.message}`);
 });
 
 // Initialize the proxy
-function handleInit() {
-  // update the proxy whenever stored settings change
-  browser.storage.onChanged.addListener((newSettings) => {
-    browser.runtime.sendMessage(newSettings.sites_list.newValue, newSettings.proxy_addr.newValue, {toProxyScript: true});
+// update the proxy whenever stored settings change
+browser.storage.onChanged.addListener((newSettings) => {
+  if (newSettings.sites_list) {
+    blockedHosts = newSettings.sites_list.newValue;
+  }
+  if (newSettings.proxy_addr) {
+    proxyAddress.host = newSettings.proxy_addr.newValue.host;
+    proxyAddress.port = newSettings.proxy_addr.newValue.port;
+  }
+});
+
+// get the current settings, then...
+browser.storage.local.get()
+  .then((storedSettings) => {
+    // if there are stored settings, update the proxy with them...
+    if (storedSettings.sites_list && storedSettings.proxy_addr) {
+      blockedHosts = storedSettings.sites_list;
+      proxyAddress = storedSettings.proxy_addr;
+    // ...otherwise, initialize storage with the default values
+    } else {
+      blockedHosts = ahoy.sites_list;
+      proxyAddress = ahoy.proxy_addr;
+      browser.storage.local.set({
+        sites_list: blockedHosts,
+        proxy_addr: proxyAddress
+      });
+    }
+  })
+  .catch(()=> {
+    console.log("Error retrieving stored settings");
   });
 
-  // get the current settings, then...
-  browser.storage.local.get()
-    .then((storedSettings) => {
-      // if there are stored settings, update the proxy with them...
-      if (storedSettings.sites_list && storedSettings.proxy_addr) {
-        browser.runtime.sendMessage({hosts: storedSettings.sites_list, proxy: storedSettings.proxy_addr}, {toProxyScript: true});
-      // ...otherwise, initialize storage with the default values
-      } else {
-        browser.storage.local.set(defaultSettings);
-      }
+browser.proxy.onRequest.addListener(handleProxyRequest, { urls: ["<all_urls>"] });
 
-    })
-    .catch(()=> {
-      console.log("Error retrieving stored settings");
-    });
-}
+// required PAC function that will be called to determine
+// if a proxy should be used.
+function handleProxyRequest(requestInfo) {
+	const url = new URL(requestInfo.url);
 
-function handleMessage(message, sender) {
-  // only handle messages from the proxy script
-  if (sender.url != browser.extension.getURL(proxyScriptURL)) {
-    return;
+	if (blockedHosts.indexOf(url.hostname) != -1) {
+		console.log("Returning proxy host = " + proxyAddress.host + " port = " + proxyAddress.port);
+		return { type: "http", host: proxyAddress.host, port: proxyAddress.port };
   }
-
-  if (message === "init") {
-    handleInit(message);
-  } else {
-    // after the init message the only other messages are status messages
-    console.log(message);
-  }
+	return { type: "direct" };
 }
-
-browser.runtime.onMessage.addListener(handleMessage);
