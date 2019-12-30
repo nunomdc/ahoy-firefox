@@ -13,7 +13,10 @@ var Ahoy = function() {
 	this.webreq_filter_list = [];
 	this.webnav_filter_list = [];
 	this.share_statistics = false;
-	this.bound_send_hostname = null;
+	this.bound = {
+		send_hostname: null,
+		check_for_blocked_site: null
+	};
 
 	this.last_request_redirected = false;
 
@@ -128,7 +131,6 @@ Ahoy.prototype.init_callbacks = function( ) {
 	this.setup_callback_filters();
 
 	browser.tabs.onUpdated.addListener(this.update_browse_action_icon.bind(this));
-	browser.webRequest.onResponseStarted.addListener( this.check_for_blocked_site.bind(this), {urls: ["<all_urls>"]} );
 
 	if (this.share_statistics) {
 		this.enable_stats();
@@ -195,20 +197,27 @@ Ahoy.prototype.after_update = function( details ) {
  * Stats functions
  */
 Ahoy.prototype.enable_stats = function () {
-	// Stats
-	this.bound_send_hostname = this.send_hostname.bind(this);
-	browser.webNavigation.onCompleted.addListener(this.bound_send_hostname, { url: this.webnav_filter_list });
+	this.bound.send_hostname = this.send_hostname.bind(this);
+	this.bound.check_for_blocked_site = this.check_for_blocked_site.bind(this);
+
+	browser.webRequest.onResponseStarted.addListener(this.bound.check_for_blocked_site, {urls: ["<all_urls>"]} );
+	browser.webNavigation.onCompleted.addListener(this.bound.send_hostname, { url: this.webnav_filter_list });
+
 	browser.storage.local.set({ "statistics": true })
 		.then(() => this.share_statistics = true)
 		.then(() => console.log("Statistics enabled [" + this.share_statistics + "]"));
 }
 
 Ahoy.prototype.disable_stats = function () {
-	// Stats
-	browser.webNavigation.onCompleted.removeListener(this.bound_send_hostname);
+	browser.webRequest.onResponseStarted.addListener(this.bound.check_for_blocked_site, {urls: ["<all_urls>"]} );
+	browser.webNavigation.onCompleted.removeListener(this.bound.send_hostname);
+
 	browser.storage.local.set({ "statistics": false })
 		.then(() => this.share_statistics = false)
 		.then(() => console.log("Statistics disabled [" + this.share_statistics + "]"));
+
+	this.bound.check_for_blocked_site = null;
+	this.bound.send_hostname = null;
 }
 
 Ahoy.prototype.send_hostname = function ( details ) {
