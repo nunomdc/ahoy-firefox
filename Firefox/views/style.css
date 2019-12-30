@@ -93,6 +93,34 @@ h1 {
   box-shadow: none;
 }
 
+.toggle {
+  width: 200px;
+  height: 40px;
+  font-size: 15px;
+  margin: 5px auto;
+}
+
+.toggle input, .toggle .toggle-label {
+  float: left;
+}
+
+.toggle input {
+  margin-left: 15px;
+  cursor: pointer;
+}
+
+.toggle .toggle-label {
+  margin-left: 5px;
+}
+
+.toggle-label label {
+  cursor: pointer;
+}
+
+.toggle-label .stats-status {
+  font-size: 14px;
+  font-weight: bold;
+}
 
 
 .waiting { display: none; margin: 10px; }

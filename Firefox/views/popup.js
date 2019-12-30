@@ -2,17 +2,23 @@ $(document).ready( function() {
 
     $(".ahoy-version").text("v" + browser.runtime.getManifest().version);
 
-    $("#verSites").click( function() {
-        var newURL = "https://sitesbloqueados.pt/?utm_source=ahoy&utm_medium=firefox-popup&utm_campaign=Ahoy%20Firefox";
-        browser.tabs.create({ url: newURL });
-    }); 
-
     browser.storage.local.get( [ "proxy_addr" ], function( result) {
         $("#proxyaddr").text( result.proxy_addr );    
     } );
 
-    $(".inquerito").click( function() {
-        browser.tabs.create({ url: "https://donativos.ahoy.pro/?utm_source=ahoy&utm_medium=firefox-popup&utm_campaign=Ahoy%20Firefox" });
+    browser.storage.local.get( [ "statistics" ], function(result) {
+        $("#stats").prop("checked", result.statistics);
+        if(result.statistics) {
+            $(".stats-status")
+                .addClass("activo")
+                .removeClass("inactivo")
+                .text("Ligada");
+        } else {
+            $(".stats-status")
+                .addClass("inactivo")
+                .removeClass("activo")
+                .text("Desligada");
+        }
     });
 
     browser.tabs.query( { active: true, currentWindow: true }, function(tabs) {
@@ -29,6 +35,14 @@ $(document).ready( function() {
         }
     });
 
+    $("#verSites").click( function() {
+        var newURL = "https://sitesbloqueados.pt/?utm_source=ahoy&utm_medium=firefox-popup&utm_campaign=Ahoy%20Firefox";
+        browser.tabs.create({ url: newURL });
+    });
+
+    $(".inquerito").click( function() {
+        browser.tabs.create({ url: "https://donativos.ahoy.pro/?utm_source=ahoy&utm_medium=firefox-popup&utm_campaign=Ahoy%20Firefox" });
+    });
 
     $("#actualizarPagina").click( function() {
         if($(this).attr("disabled")) { // HERE
@@ -76,5 +90,21 @@ $(document).ready( function() {
         // Refresh the page
         browser.tabs.reload();
    });
+
+    $("#stats").change( function() {
+        if(this.checked) {
+            $(".stats-status")
+                .addClass("activo")
+                .removeClass("inactivo")
+                .text("Ligada");
+            browser.extension.getBackgroundPage().ahoy.enable_stats();
+        } else {
+            $(".stats-status")
+                .addClass("inactivo")
+                .removeClass("activo")
+                .text("Desligada");
+            browser.extension.getBackgroundPage().ahoy.disable_stats();
+        }
+    });
 
 });

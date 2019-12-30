@@ -12,16 +12,21 @@ var Ahoy = function() {
 	this.proxy_addr = "proxy1.ahoy.pro:3127"; //default proxy
 	this.webreq_filter_list = [];
 	this.webnav_filter_list = [];
+	this.share_statistics = false;
+	this.bound_send_hostname = null;
 
 	this.last_request_redirected = false;
 
 	// Update the info with the latest content from the Local Storage
-	browser.storage.local.get( [ "sites_list", "proxy_addr" ],function(result) {
+	browser.storage.local.get( [ "sites_list", "proxy_addr", "statistics" ],function(result) {
 		if (result.sites_list !== undefined)
 			this.sites_list = result.sites_list;
 
 		if (result.proxy_addr !== undefined)
 			this.proxy_addr = result.proxy_addr;
+
+		if (result.statistics !== undefined)
+			this.share_statistics = result.statistics;
 
 		this.enable_proxy();
 
@@ -125,8 +130,9 @@ Ahoy.prototype.init_callbacks = function( ) {
 	browser.tabs.onUpdated.addListener(this.update_browse_action_icon.bind(this));
 	browser.webRequest.onResponseStarted.addListener( this.check_for_blocked_site.bind(this), {urls: ["<all_urls>"]} );
 
-	// Stats
-	browser.webNavigation.onCompleted.addListener( this.send_hostname.bind(this), {url: this.webnav_filter_list } );
+	if (this.share_statistics) {
+		this.enable_stats();
+	}
 };
 
 Ahoy.prototype.update_callbacks = function() {
@@ -135,9 +141,6 @@ Ahoy.prototype.update_callbacks = function() {
 
 	browser.tabs.onUpdated.removeListener(this.update_browse_action_icon.bind(this));
 	browser.webRequest.onResponseStarted.removeListener(this.check_for_blocked_site.bind(this));
-
-	// Stats
-	browser.webNavigation.onCompleted.removeListener(this.send_hostname.bind(this));
 
 	// Recreate new callbacks
 	this.init_callbacks();
@@ -191,13 +194,28 @@ Ahoy.prototype.after_update = function( details ) {
 /**
  * Stats functions
  */
+Ahoy.prototype.enable_stats = function () {
+	// Stats
+	this.bound_send_hostname = this.send_hostname.bind(this);
+	browser.webNavigation.onCompleted.addListener(this.bound_send_hostname, { url: this.webnav_filter_list });
+	browser.storage.local.set({ "statistics": true })
+		.then(() => this.share_statistics = true)
+		.then(() => console.log("Statistics enabled [" + this.share_statistics + "]"));
+}
+
+Ahoy.prototype.disable_stats = function () {
+	// Stats
+	browser.webNavigation.onCompleted.removeListener(this.bound_send_hostname);
+	browser.storage.local.set({ "statistics": false })
+		.then(() => this.share_statistics = false)
+		.then(() => console.log("Statistics disabled [" + this.share_statistics + "]"));
+}
+
 Ahoy.prototype.send_hostname = function ( details ) {
-	var parser = document.createElement("a");
-	var hostname = parser.hostname.replace("www.","");
+	const url = new URL(details.url);
+	const hostname = url.hostname.replace("www.", "");
 	var xhr = new XMLHttpRequest();
 	
-	parser.href = details.url;
-
 	xhr.open("GET", this.api_url + "/api/stats/host/" + hostname);
 
 	xhr.onreadystatechange = function() {
